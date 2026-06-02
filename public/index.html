@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>餐饮记账 - 共享版</title>
+    <style>
+        /* 复用之前的CSS样式，此处省略保持简洁，实际使用时复制原版样式 */
+        * { box-sizing: border-box; font-family: system-ui; }
+        body { background: #f1f5f0; margin: 0; padding: 20px; }
+        .app-container { max-width: 1300px; margin: 0 auto; background: white; border-radius: 32px; box-shadow: 0 20px 35px -12px rgba(0,0,0,0.15); overflow: hidden; }
+        .header { background: #2c3e2f; color: white; padding: 20px 28px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; padding: 24px 28px; background: #fefcf5; }
+        .stat-card { background: white; border-radius: 24px; padding: 18px; border: 1px solid #eef0e5; }
+        .stat-card .amount { font-size: 2rem; font-weight: 700; }
+        .two-columns { display: flex; flex-wrap: wrap; gap: 24px; padding: 28px; }
+        .form-panel, .records-panel { background: white; border-radius: 28px; padding: 20px; border: 1px solid #e9eddf; }
+        .form-panel { flex: 1; } .records-panel { flex: 2; }
+        input, select, .btn { width: 100%; padding: 12px; margin: 8px 0; border-radius: 20px; border: 1.5px solid #e0e4d6; }
+        .btn { background: #2c3e2f; color: white; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #edece2; }
+        .badge { padding: 4px 10px; border-radius: 40px; font-size: 0.7rem; }
+        .badge-income { background: #e2f3e4; color: #2a6e3a; }
+        .badge-expense { background: #ffe2d6; color: #bc5a2c; }
+        .delete-btn { background: none; border: none; cursor: pointer; color: #b38b6d; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <div class="header">
+        <h1>🏪 餐饮共享记账本</h1>
+        <div class="sub">局域网多人协作 · 数据实时同步</div>
+    </div>
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="label">总销售额</div><div class="amount" id="totalIncome">¥0</div></div>
+        <div class="stat-card"><div class="label">总支出</div><div class="amount" id="totalExpense">¥0</div></div>
+        <div class="stat-card"><div class="label">净利润</div><div class="amount" id="netProfit">¥0</div></div>
+    </div>
+    <div class="two-columns">
+        <div class="form-panel">
+            <h3>➕ 记一笔</h3>
+            <input type="date" id="date" required>
+            <select id="type"><option value="income">🍽️ 收入</option><option value="expense">💸 支出</option></select>
+            <input type="text" id="category" placeholder="类别 (如: 午餐/买菜)" required>
+            <input type="number" id="amount" step="0.01" placeholder="金额" required>
+            <input type="text" id="note" placeholder="备注 (可选)">
+            <button class="btn" id="addBtn">✅ 添加记账</button>
+            <button class="btn" id="clearBtn" style="background:#aa6f55; margin-top:10px;">🗑️ 清空全部</button>
+        </div>
+        <div class="records-panel">
+            <h3>📋 流水明细 (实时同步)</h3>
+            <div style="margin-bottom: 12px;">
+                <select id="filterType"><option value="all">全部</option><option value="income">只看收入</option><option value="expense">只看支出</option></select>
+            </div>
+            <table id="recordsTable"><thead><tr><th>日期</th><th>类型</th><th>类别</th><th>金额</th><th>备注</th><th></th></tr></thead><tbody id="recordsTbody"></tbody></table>
+        </div>
+    </div>
+</div>
+<script>
+    const API_BASE = '';
+    let transactions = [];
+    let filterType = 'all';
+
+    async function fetchData() {
+        const res = await fetch('/api/transactions');
+        transactions = await res.json();
+        render();
+    }
+
+    async function addRecord() {
+        const record = {
+            date: document.getElementById('date').value,
+            type: document.getElementById('type').value,
+            category: document.getElementById('category').value,
+            amount: parseFloat(document.getElementById('amount').value),
+            note: document.getElementById('note').value
+        };
+        if (!record.date || !record.category || !record.amount) return alert('请填写完整');
+        const res = await fetch('/api/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) });
+        if (res.ok) { fetchData(); clearForm(); }
+    }
+
+    async function deleteRecord(id) {
+        await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+        fetchData();
+    }
+
+    async function clearAll() {
+        if(confirm('清空所有数据？')) { await fetch('/api/transactions', { method: 'DELETE' }); fetchData(); }
+    }
+
+    function clearForm() {
+        document.getElementById('category').value = '';
+        document.getElementById('amount').value = '';
+        document.getElementById('note').value = '';
+        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+    }
+
+    function render() {
+        let filtered = transactions;
+        if (filterType !== 'all') filtered = filtered.filter(t => t.type === filterType);
+        let totalInc = 0, totalExp = 0;
+        transactions.forEach(t => { if(t.type === 'income') totalInc += t.amount; else totalExp += t.amount; });
+        document.getElementById('totalIncome').innerText = `¥${totalInc.toFixed(2)}`;
+        document.getElementById('totalExpense').innerText = `¥${totalExp.toFixed(2)}`;
+        document.getElementById('netProfit').innerText = `¥${(totalInc - totalExp).toFixed(2)}`;
+        
+        const tbody = document.getElementById('recordsTbody');
+        if(filtered.length === 0) { tbody.innerHTML = '<tr><td colspan="6">暂无数据</td></tr>'; return; }
+        tbody.innerHTML = filtered.map(t => `
+            <tr>
+                <td>${t.date}</td>
+                <td><span class="badge ${t.type === 'income' ? 'badge-income' : 'badge-expense'}">${t.type === 'income' ? '收入' : '支出'}</span></td>
+                <td>${escapeHtml(t.category)}</td>
+                <td style="color:${t.type==='income'?'#2a6e3a':'#bc5a2c'}">${t.type==='income'?'+':'-'}¥${t.amount.toFixed(2)}</td>
+                <td>${escapeHtml(t.note || '—')}</td>
+                <td><button class="delete-btn" onclick="deleteRecord(${t.id})">🗑️</button></td>
+            </tr>
+        `).join('');
+    }
+
+    function escapeHtml(str) { return str.replace(/[&<>]/g, function(m){if(m==='&')return '&amp;';if(m==='<')return '&lt;';if(m==='>')return '&gt;';return m;}); }
+
+    document.getElementById('addBtn').onclick = addRecord;
+    document.getElementById('clearBtn').onclick = clearAll;
+    document.getElementById('filterType').onchange = (e) => { filterType = e.target.value; render(); };
+    document.getElementById('date').value = new Date().toISOString().split('T')[0];
+    fetchData();
+    setInterval(fetchData, 3000);
+</script>
+</body>
+</html>
